@@ -5,6 +5,19 @@
 #include "utils.h"
 #include <iostream>
 #include <string.h>
+#include <iostream>
+
+using namespace std;
+
+#include "mysql_connection.h"
+
+#include <cppconn/driver.h>
+#include <cppconn/exception.h>
+#include <cppconn/resultset.h>
+#include <cppconn/statement.h>
+#include <cppconn/prepared_statement.h>
+
+
 
 httpServer::httpServer(unsigned short port)
 {
@@ -34,7 +47,6 @@ httpServer::httpServer(unsigned short port)
     buildMimetypeTable();
 }
 
-
 std::string httpServer::getmimeType(char* file)
 {
     std::string strfile=std::string(file);
@@ -60,6 +72,7 @@ std::string httpServer::getmimeType(char* file)
 
     return result;
 }
+
 void httpServer::buildMimetypeTable()
 {
     this->mimeTypes["aac"]="audio/aac";
@@ -135,7 +148,6 @@ int httpServer::waitForConnections()
     return newsock_fd;
 }
 
-
 void httpServer::sendContent(int newsock_fd,char* httpHeader,unsigned long int headerLen, char* content, unsigned long int contentLen)
 {
     char* msg=new char[headerLen+contentLen+2];
@@ -165,9 +177,6 @@ void httpServer::sendFile(int newsock_fd,char* file)
     sendContent(newsock_fd,httpHeader,headerLen,fileContent,filelen);
 
 }
-
-
-
 
 
 int httpServer::getHTTPParameter(std::vector<std::vector<std::string*>*> *lines,std::string parameter)
@@ -249,10 +258,74 @@ void httpServer::resolveRequests(int newsock_fd)
 }
 
 bool httpServer::validatePassword(char* username,char* password){
+    try {
+        sql::Driver *driver;
+        sql::Connection *con;
+        sql::PreparedStatement  *prep_stmt;
+        sql::PreparedStatement  *hasher;
+        sql::ResultSet *res;
 
-    return true;
+        //Connect
+        driver = get_driver_instance();
+        //Other pc IP
+        con = driver->connect("tcp://10.0.2.13:3306", "root", "uliware");
+        if(!con->isValid())
+        {
+            cout << "Error al conectar";
+            return false;
+        }
+        //Select database
+        con->setSchema("sistemas");
+
+        //Secure user password
+        hasher = con->prepareStatement("SELECT SHA1(?);");
+        hasher->setString(1, password);//User password
+        res = hasher->executeQuery();
+        res->next();
+        sql::SQLString userHash = res->getString(1);
+        delete res;
+
+        //Search user
+        prep_stmt = con->prepareStatement("select * from users where user=?");
+        prep_stmt->setString(1, username);//User username
+        res = prep_stmt->executeQuery();
+
+        if(res->next())
+        {
+            cout << "Usuario correcto\n";
+            sql::SQLString dbHash = res->getString("passwd");
+            if(dbHash == userHash)
+            {
+                cout << "Contraseña correcta\n";
+                return true;
+            }
+            else
+            {
+                cout << "Contraseña incorrecta\n";
+                return false;
+            }
+        }
+        else
+        {
+            cout << "No existe el usuario\n";
+            return false;
+        }
+
+        delete res;
+        delete prep_stmt;
+        delete con;
+
+    }catch (sql::SQLException &e) {
+        cout << "# ERR: SQLException in " << __FILE__;
+        cout << "(" << __FUNCTION__ << ") on line "<< __LINE__ << endl;
+        cout << "# ERR: " << e.what();
+        cout << " (MySQL error code: " << e.getErrorCode();
+        cout << ", SQLState: " << e.getSQLState() << " )" << endl;
+    }
+
+
+    return false;
 }
-
 
 void httpServer::closeServer()
 {

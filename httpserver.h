@@ -6,6 +6,7 @@
 #include <netinet/in.h>
 #include <vector>
 #include <map>
+#include <mpi.h>
 
 /**
  * @brief Clase que implementa un servidor HTTP sencillo

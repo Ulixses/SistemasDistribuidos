@@ -86,7 +86,6 @@ void deleteLines(std::vector<std::vector<std::string*>*>* lines)
     }
 }
 
-
 void printLines(std::vector<std::vector<std::string*>*>* lines)
 {
     for(unsigned long int i=0;i<lines->size();i++)
@@ -208,7 +207,6 @@ std::vector<std::string*>* strCat(std::string* str,char sep)
     result->push_back(strres);
     return result;
 }
-
 
 char* getFromPost(std::vector<std::string*> &postLine, std::string param)
 {

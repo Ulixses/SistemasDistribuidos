@@ -5,6 +5,8 @@
 #include <vector>
 #include <string>
 #include "httpserver.h"
+#include "mysql_connection.h"
+#include <cppconn/driver.h>
 
 void readLine (int socket,   std::vector<std::string*> *line);
 void readLines(int socket,std::vector<std::vector<std::string*> *> *lines);
@@ -23,4 +25,5 @@ void createHeader(char** httpHeader, unsigned long int* headerLen,
 void readFile(char* file,char** buff,unsigned long int* fileLen);
 
 char* getFromPost(std::vector<std::string*> &postLine, std::string param);
+sql::Connection * getMySql();
 #endif // UTILS_H

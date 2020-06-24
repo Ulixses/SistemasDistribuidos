@@ -1,13 +1,13 @@
 #include "httpserver.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include "utils.h"
 #include <iostream>
 #include <string.h>
-#include <iostream>
 
-using namespace std;
+//using namespace std;
 
 #include "mysql_connection.h"
 
@@ -17,16 +17,15 @@ using namespace std;
 #include <cppconn/statement.h>
 #include <cppconn/prepared_statement.h>
 
-
+#include "mpi_manager.h"
 
 httpServer::httpServer(unsigned short port)
 {
-
     sock_fd = socket(AF_INET, SOCK_STREAM, 0);
-     if (sock_fd < 0)
-     {
-        printf("Error creating socket\n");
-     }
+    if (sock_fd < 0)
+    {
+    printf("Error creating socket\n");
+    }
     struct sockaddr_in serv_addr;
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = INADDR_ANY;
@@ -45,6 +44,10 @@ httpServer::httpServer(unsigned short port)
     listen(sock_fd,5);
 
     buildMimetypeTable();
+
+    //Añadidido por Alejandro
+    this->pclase = NULL;
+    this->file = NULL;
 }
 
 std::string httpServer::getmimeType(char* file)
@@ -140,8 +143,28 @@ void httpServer::buildMimetypeTable()
 
 int httpServer::waitForConnections()
 {
+    //Esta funcion bloquea el proceso, encuentra la forma de que no pase
     struct sockaddr_in cli_addr;
     socklen_t clilen = sizeof(cli_addr);
+    //Codigo para comprobar los tiempos de los procesos
+    //y evitar que accept() bloque el programa
+    fd_set set;
+    struct timeval tv;//2 segundos, 0 milisegundos
+    tv.tv_sec = 2;
+    tv.tv_usec = 0;
+
+    FD_ZERO(&set);
+    FD_SET(sock_fd, &set);
+    int rv = -1;
+    //Bucle cada tv segundos que comprueba los tiempos de los procesos
+    while (rv != 1 || FD_ISSET(sock_fd, &set) == 0)
+    {
+        FD_SET(sock_fd, &set);
+        rv = select(sock_fd+1, &set, NULL, NULL, &tv);
+        //std::cout << rv << " : " << FD_ISSET(sock_fd, &set) << std::endl;
+        checkTimes();
+    }
+    
     int newsock_fd = accept(sock_fd,
                             (struct sockaddr *) &cli_addr,
                             &clilen);
@@ -175,9 +198,23 @@ void httpServer::sendFile(int newsock_fd,char* file)
                  &(mimetype[0]),
                  filelen);
     sendContent(newsock_fd,httpHeader,headerLen,fileContent,filelen);
-
 }
 
+void httpServer::sendVirtualFile(int newsock_fd,char* file, char *content, std::string fileType = "html")
+{
+
+    std::string mimetype = this->mimeTypes[fileType];
+    char* fileContent=NULL;
+    unsigned long int filelen= strlen(content);
+    char* httpHeader;
+    unsigned long int headerLen;
+
+    createHeader(&httpHeader,&headerLen,
+                 "200 OK",
+                 &(mimetype[0]),
+                 filelen);
+    sendContent(newsock_fd,httpHeader,headerLen,content,filelen);
+}
 
 int httpServer::getHTTPParameter(std::vector<std::vector<std::string*>*> *lines,std::string parameter)
 {
@@ -243,9 +280,7 @@ void httpServer::resolveRequests(int newsock_fd)
 
                 if(s2->compare("/services.php")==0)
                 {
-
-                    sendFile(newsock_fd,"/services.html");
-
+                    servicesPost(newsock_fd, postLine);
                 }
 
            }
@@ -259,23 +294,16 @@ void httpServer::resolveRequests(int newsock_fd)
 
 bool httpServer::validatePassword(char* username,char* password){
     try {
-        sql::Driver *driver;
         sql::Connection *con;
         sql::PreparedStatement  *prep_stmt;
         sql::PreparedStatement  *hasher;
         sql::ResultSet *res;
 
-        //Connect
-        driver = get_driver_instance();
-        //Other pc IP
-        con = driver->connect("tcp://10.0.2.13:3306", "root", "uliware");
-        if(!con->isValid())
+        con = getMySql();
+        if(con == NULL)
         {
-            cout << "Error al conectar";
             return false;
         }
-        //Select database
-        con->setSchema("sistemas");
 
         //Secure user password
         hasher = con->prepareStatement("SELECT SHA1(?);");
@@ -292,22 +320,22 @@ bool httpServer::validatePassword(char* username,char* password){
 
         if(res->next())
         {
-            cout << "Usuario correcto\n";
+            std::cout << "Usuario correcto\n";
             sql::SQLString dbHash = res->getString("passwd");
             if(dbHash == userHash)
             {
-                cout << "Contraseña correcta\n";
+                std::cout << "Contraseña correcta\n";
                 return true;
             }
             else
             {
-                cout << "Contraseña incorrecta\n";
+                std::cout << "Contraseña incorrecta\n";
                 return false;
             }
         }
         else
         {
-            cout << "No existe el usuario\n";
+            std::cout << "No existe el usuario\n";
             return false;
         }
 
@@ -316,11 +344,11 @@ bool httpServer::validatePassword(char* username,char* password){
         delete con;
 
     }catch (sql::SQLException &e) {
-        cout << "# ERR: SQLException in " << __FILE__;
-        cout << "(" << __FUNCTION__ << ") on line "<< __LINE__ << endl;
-        cout << "# ERR: " << e.what();
-        cout << " (MySQL error code: " << e.getErrorCode();
-        cout << ", SQLState: " << e.getSQLState() << " )" << endl;
+        std::cout << "# ERR: SQLException in " << __FILE__;
+        std::cout << "(" << __FUNCTION__ << ") on line "<< __LINE__ << std::endl;
+        std::cout << "# ERR: " << e.what();
+        std::cout << " (MySQL error code: " << e.getErrorCode();
+        std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
     }
 
 
@@ -331,4 +359,91 @@ void httpServer::closeServer()
 {
 
     close(this->sock_fd);
+}
+
+void httpServer::servicesPost(int newsock_fd, std::vector<std::string*> &postLine)
+{
+    //Leer las checkbox del usuario
+    char * pruebaclaseBox = getFromPost(postLine,"pruebaclase");
+    char * remoteFileBox = getFromPost(postLine,"remoteFile");
+    bool pruebaclase = false;
+    bool remoteFile = false;
+
+    if( pruebaclaseBox != NULL)
+        pruebaclase = strcmp(pruebaclaseBox,"on") == 0;
+    if( remoteFileBox != NULL)
+        remoteFile = strcmp(remoteFileBox,"on") == 0;
+
+    char resultadoTemplate[] ="\
+<html>\n\
+<body>\n\
+<h2>La suma es: %s</h2><br>\n\
+<h2>El contenido del fichero es: %s</h2><br>\n\
+</body>\n\
+</html>";
+
+    char suma[] = "Proceso no realizado";
+    std::string archivo = "Proceso no realizado";
+    if(pruebaclase)
+    {
+        if(pclase == NULL)
+        {
+            pclase=new pruebaClase_stub();
+            int result=pclase->suma(1,2);
+            sprintf(suma, "%d", result);
+            time(&pclaseTime);
+        }
+        else
+        {
+            int result=pclase->suma(1,2);
+            sprintf(suma, "%d", result);
+        }
+    }
+    if(remoteFile)
+    {
+        if(file == NULL)
+        {
+            file=new remoteFile_stub();
+            unsigned long int bufflen;
+            char * buff = NULL;
+            file->readfile("prueba.txt",&buff,&bufflen);
+            archivo = buff;
+            if(buff != NULL)
+                delete[] buff;
+            time(&fileTime);
+        }
+        else
+        {
+            unsigned long int bufflen;
+            char * buff = NULL;
+            file->readfile("prueba.txt",&buff,&bufflen);
+            archivo = buff;
+            if(buff != NULL)
+            delete[] buff;
+        }
+    }
+    int fileSize = strlen(suma) + archivo.size() + strlen(resultadoTemplate) + 1;
+    char * content = new char[fileSize];
+    sprintf(content, resultadoTemplate, suma, archivo.c_str());
+    sendVirtualFile(newsock_fd, "resultado.html", content);
+
+}
+
+void httpServer::checkTimes()
+{
+    //std::cout << "HE COMPROBADO LOS TIEMPOS\n";
+    
+    int tiempo = 60; //Tiempo en segundos para apagar los procesos
+    if(file != NULL && difftime(time(NULL),fileTime) > tiempo)
+    {
+        std::cout << "HE BORRADO REMOTEFILE\n";
+        delete file;
+        file = NULL;
+    }
+    if(pclase != NULL && difftime(time(NULL),pclaseTime) > tiempo)
+    {
+        std::cout << "HE BORRADO PCLASE\n";
+        delete pclase;
+        pclase = NULL;
+    }
 }

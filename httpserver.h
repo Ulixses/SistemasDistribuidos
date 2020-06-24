@@ -5,7 +5,16 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <vector>
+#include <stdlib.h>
+#include <vector>
+#include <string>
 #include <map>
+#include <mpi.h>
+
+#include "remotefile_stub.h"
+#include "pruebaclase_stub.h"
+#include <ctime>
+
 
 /**
  * @brief Clase que implementa un servidor HTTP sencillo
@@ -32,13 +41,21 @@ class httpServer
      * @brief files_path Directorio donde se guardan los archivos que sirve el
      * servidor http
      */
-    std::string files_path="html_dir";
+    std::string files_path="../html_dir";
     /**
      * @brief mimeTypes Lista de tipos de ficheros conocidos por el servidor http. Cualquier
      * extensión de fichero no listada se enviará como fichero de tipo "application/octet-stream",
      * que será interpretado por el cliente como una descarga de archivos binarios.
      */
     std::map<std::string,std::string> mimeTypes;
+
+    //Variables para reutilizar procesos y ver su tiempo de vida
+    pruebaClase_stub* pclase;
+    remoteFile_stub* file;
+
+    time_t pclaseTime;
+    time_t fileTime;
+
 
 public:
     //
@@ -143,6 +160,19 @@ public:
      */
     bool validatePassword(char* username,char* password);
 
+    /**
+     * @brief servicesPost Se encarga de manejar las peticiones post a la url services.php
+     * 
+     * @param newsock_fd Socket en el que se reliza la comunicación con el cliente. Una vez
+     * recibido el mensaje, se cierra la conexión.
+     * @param postLine La informacion enviada con el parametro POST.
+     */
+    void servicesPost(int newsock_fd, std::vector<std::string*> &postLine);
+
+
+    void sendVirtualFile(int newsock_fd, char * file, char * content, std::string fileType);
+
+    void checkTimes();
 };
 
 

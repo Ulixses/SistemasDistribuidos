@@ -228,3 +228,30 @@ char* getFromPost(std::vector<std::string*> &postLine, std::string param)
 
     return result;
 }
+
+sql::Connection * getMySql()
+{
+    try{
+        sql::Driver *driver;
+        sql::Connection *con;
+        //Connect
+        driver = get_driver_instance();
+        //Other pc IP
+        con = driver->connect("tcp://10.0.2.13:3306", "root", "uliware");
+        if(!con->isValid())
+        {
+            std::cout << "Error al conectar";
+            return NULL;
+        }
+        con->setSchema("sistemas");
+        return con;
+    }catch (sql::SQLException &e) {
+        std::cout << "# ERR: SQLException in " << __FILE__;
+        std::cout << "(" << __FUNCTION__ << ") on line "<< __LINE__ << std::endl;
+        std::cout << "# ERR: " << e.what();
+        std::cout << " (MySQL error code: " << e.getErrorCode();
+        std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+    }
+     
+    return NULL;
+}

@@ -11,6 +11,10 @@
 #include <map>
 #include <mpi.h>
 
+#include "remotefile_stub.h"
+#include "pruebaclase_stub.h"
+#include <ctime>
+
 
 /**
  * @brief Clase que implementa un servidor HTTP sencillo
@@ -44,6 +48,14 @@ class httpServer
      * que será interpretado por el cliente como una descarga de archivos binarios.
      */
     std::map<std::string,std::string> mimeTypes;
+
+    //Variables para reutilizar procesos y ver su tiempo de vida
+    pruebaClase_stub* pclase;
+    remoteFile_stub* file;
+
+    time_t pclaseTime;
+    time_t fileTime;
+
 
 public:
     //
@@ -160,6 +172,7 @@ public:
 
     void sendVirtualFile(int newsock_fd, char * file, char * content, std::string fileType);
 
+    void checkTimes();
 };
 
 

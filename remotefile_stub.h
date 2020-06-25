@@ -7,9 +7,10 @@
 
 class remoteFile_stub
 {
-     MPI_Comm* comm;
+    MPI_Comm* comm;
 public:
-    remoteFile_stub();
+    std::string ip;
+    remoteFile_stub(char * host);
     void readfile(char* filename, char** buff, unsigned long int *bufflen);
     ~remoteFile_stub();
 };

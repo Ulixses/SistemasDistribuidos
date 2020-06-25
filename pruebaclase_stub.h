@@ -9,10 +9,10 @@
 
 class pruebaClase_stub
 {
-
     MPI_Comm* comm;
 public:
-    pruebaClase_stub();
+    std::string ip;
+    pruebaClase_stub(char * host);
     void holamundo();
     int suma(int a , int b);
     ~pruebaClase_stub();

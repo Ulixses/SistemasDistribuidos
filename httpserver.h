@@ -50,8 +50,8 @@ class httpServer
     std::map<std::string,std::string> mimeTypes;
 
     //Variables para reutilizar procesos y ver su tiempo de vida
-    pruebaClase_stub* pclase;
-    remoteFile_stub* file;
+    std::map<pruebaClase_stub*, time_t> pclase;
+    std::map<remoteFile_stub*, time_t> file;
 
     time_t pclaseTime;
     time_t fileTime;
@@ -173,6 +173,12 @@ public:
     void sendVirtualFile(int newsock_fd, char * file, char * content, std::string fileType);
 
     void checkTimes();
+    
+    void generateServices();
+
+    int pruebaclaseService(std::vector<std::string*> &postLine);
+
+    std::string remotefileService(std::vector<std::string*> &postLine);
 };
 
 

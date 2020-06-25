@@ -46,8 +46,8 @@ httpServer::httpServer(unsigned short port)
     buildMimetypeTable();
 
     //Añadidido por Alejandro
-    this->pclase = NULL;
-    this->file = NULL;
+
+    this->generateServices();
 }
 
 std::string httpServer::getmimeType(char* file)
@@ -357,7 +357,7 @@ bool httpServer::validatePassword(char* username,char* password){
 
 void httpServer::closeServer()
 {
-
+    
     close(this->sock_fd);
 }
 
@@ -386,41 +386,12 @@ void httpServer::servicesPost(int newsock_fd, std::vector<std::string*> &postLin
     std::string archivo = "Proceso no realizado";
     if(pruebaclase)
     {
-        if(pclase == NULL)
-        {
-            pclase=new pruebaClase_stub();
-            int result=pclase->suma(1,2);
-            sprintf(suma, "%d", result);
-            time(&pclaseTime);
-        }
-        else
-        {
-            int result=pclase->suma(1,2);
-            sprintf(suma, "%d", result);
-        }
+        int result = this->pruebaclaseService(postLine);
+        sprintf(suma, "%d", result);
     }
     if(remoteFile)
     {
-        if(file == NULL)
-        {
-            file=new remoteFile_stub();
-            unsigned long int bufflen;
-            char * buff = NULL;
-            file->readfile("prueba.txt",&buff,&bufflen);
-            archivo = buff;
-            if(buff != NULL)
-                delete[] buff;
-            time(&fileTime);
-        }
-        else
-        {
-            unsigned long int bufflen;
-            char * buff = NULL;
-            file->readfile("prueba.txt",&buff,&bufflen);
-            archivo = buff;
-            if(buff != NULL)
-            delete[] buff;
-        }
+        archivo = remotefileService(postLine);
     }
     int fileSize = strlen(suma) + archivo.size() + strlen(resultadoTemplate) + 1;
     char * content = new char[fileSize];
@@ -434,16 +405,143 @@ void httpServer::checkTimes()
     //std::cout << "HE COMPROBADO LOS TIEMPOS\n";
     
     int tiempo = 60; //Tiempo en segundos para apagar los procesos
-    if(file != NULL && difftime(time(NULL),fileTime) > tiempo)
+    for(auto i : pclase)
+        if(difftime(time(NULL),i.second) > tiempo)
+        {
+            std::cout << "HE BORRADO REMOTEFILE\n";
+            delete i.first;
+            pclase.erase(i.first);
+        }
+    for(auto i : file)
+        if(difftime(time(NULL),i.second) > tiempo)
+        {
+            std::cout << "HE BORRADO PCLASE\n";
+            delete i.first;
+            file.erase(i.first);
+        }
+}
+
+void httpServer::generateServices()
+{    
+    std::string filepath=this->files_path+std::string("/services_template.html");
+    char* fileContent=NULL;
+    unsigned long int filelen=0;
+    readFile(&filepath[0],&fileContent,&filelen);
+
+    //<option value="10.0.2.23">10.0.2.23</option>
+    std::string ips_file = "";
+    std::string ips_prueba = "";
+    char option_template[] = "<option value='%s'>%s</option>\n";
+    char dummy[100];
+    for (auto i : MPI_Manager::pruebaclase)
     {
-        std::cout << "HE BORRADO REMOTEFILE\n";
-        delete file;
-        file = NULL;
+        sprintf(dummy, option_template, i.first.c_str(), i.first.c_str());
+        ips_prueba += dummy;
     }
-    if(pclase != NULL && difftime(time(NULL),pclaseTime) > tiempo)
+    
+    for (auto i : MPI_Manager::remotefile)
     {
-        std::cout << "HE BORRADO PCLASE\n";
-        delete pclase;
-        pclase = NULL;
+        sprintf(dummy, option_template, i.first.c_str(), i.first.c_str());
+        ips_file += dummy;
     }
+
+    char * new_services = new char[filelen + ips_file.size() + ips_prueba.size() + 1];
+    sprintf(new_services, fileContent, ips_file.c_str(), ips_prueba.c_str());
+
+    filepath=this->files_path+std::string("/services.html");
+    FILE * service = fopen(filepath.c_str(),"w");
+    if(service == NULL)
+        std::cout << "Error al abrir services.html\n";
+    else
+    {
+        fputs(new_services, service);
+        fclose(service);
+    }
+    delete[] new_services;
+}
+
+int httpServer::pruebaclaseService(std::vector<std::string*> &postLine)
+{
+    int result = 0;
+    int n1 = std::stoi(getFromPost(postLine,"n1"));
+    int n2 = std::stoi(getFromPost(postLine,"n2"));
+    std::string ip = getFromPost(postLine,"ip_prueba");
+
+    std::string command = "scp rpc_pruebaclase ulises@" + ip;
+    command += ":/home/ulises/SistemasDistribuidos/build";
+
+    //std::cout << command << "\n";
+    //Compruebo si esta copiado
+    if(!MPI_Manager::pruebaclase[ip])
+    {
+        //Copiar archivo y marcar como copiado
+        MPI_Manager::pruebaclase[ip] = true;
+        std::string cmd = "UPDATE services SET copiado=1 WHERE ip='" + ip;
+        cmd += "' and service='rpc_pruebaclase'";
+        updateCommand(cmd);
+        FILE * scp = popen(command.c_str(),"w");
+        pclose(scp);
+    }
+    for(auto i : pclase)
+    {
+        if(i.first->ip == ip)
+        {
+            return i.first->suma(n1,n2);
+        }
+    }
+
+    pruebaClase_stub * dummy;
+    dummy=new pruebaClase_stub((char *)ip.c_str());
+    result=dummy->suma(n1,n2);
+    time(&pclaseTime);
+    pclase.insert(std::pair<pruebaClase_stub*, time_t>(dummy,time(NULL)));
+
+    return result;
+}
+
+std::string httpServer::remotefileService(std::vector<std::string*> &postLine)
+{
+    std::string ip = getFromPost(postLine,"ip_file");
+
+    std::string command = "scp rpc_remotefile ulises@" + ip;
+    command += ":/home/ulises/SistemasDistribuidos/build";
+
+    //std::cout << command << "\n";
+    //Compruebo si esta copiado
+    if(!MPI_Manager::remotefile[ip])
+    {
+        //Copiar archivo y marcar como copiado
+        MPI_Manager::remotefile[ip] = true;
+        std::string cmd = "UPDATE services SET copiado=1 WHERE ip='" + ip;
+        cmd += "' and service='rpc_remotefile'";
+        updateCommand(cmd);
+        FILE * scp = popen(command.c_str(),"w");
+        pclose(scp);
+    }
+
+
+    for(auto i : file)
+    {
+        if(i.first->ip == ip)
+        {
+            unsigned long int bufflen;
+            char * buff = NULL;
+            i.first->readfile("prueba.txt",&buff,&bufflen);
+            std::string result = buff;
+            if(buff != NULL)
+                delete[] buff;
+            return result;
+        }
+    }
+
+    remoteFile_stub * dummy =new remoteFile_stub((char*)ip.c_str());
+    unsigned long int bufflen;
+    char * buff = NULL;
+    dummy->readfile("prueba.txt",&buff,&bufflen);
+    std::string result = buff;
+    if(buff != NULL)
+        delete[] buff;
+    file.insert(std::pair<remoteFile_stub*, time_t>(dummy,time(NULL)));
+
+    return result;
 }

@@ -2,11 +2,12 @@
 #include "mpi_manager.h"
 #include <string.h>
 
-remoteFile_stub::remoteFile_stub()
+remoteFile_stub::remoteFile_stub(char * host)
 {
     MPI_Manager::Init();
     //en remote se adapta al host
-    this->comm=MPI_Manager::Instanciate("rpc_remotefile");
+    ip = host;
+    this->comm=MPI_Manager::Instanciate("rpc_remotefile", host);
 }
 
 void remoteFile_stub::readfile(char *filename, char **buff, unsigned long *bufflen)

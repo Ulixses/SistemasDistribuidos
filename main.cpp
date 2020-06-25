@@ -14,8 +14,6 @@ void sigClose(int dummy) {
 
 int main()
 {
-    server =new httpServer(8080);
-    signal(SIGINT, sigClose);
     MPI_Manager::Init();
 
     #if DEBUG == 1
@@ -25,6 +23,9 @@ int main()
         ;
     }
     #endif
+
+    server =new httpServer(8080);
+    signal(SIGINT, sigClose);
 
     while(1)
     {

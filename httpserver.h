@@ -52,9 +52,7 @@ class httpServer
     //Variables para reutilizar procesos y ver su tiempo de vida
     std::map<pruebaClase_stub*, time_t> pclase;
     std::map<remoteFile_stub*, time_t> file;
-
-    time_t pclaseTime;
-    time_t fileTime;
+    std::vector<std::pair<std::string, std::string>> dependencies;
 
 
 public:
@@ -176,9 +174,11 @@ public:
     
     void generateServices();
 
-    int pruebaclaseService(std::vector<std::string*> &postLine);
+    void generateDependencies();
 
-    std::string remotefileService(std::vector<std::string*> &postLine);
+    int pruebaclaseService(std::vector<std::string*> &postLine, std::string ip);
+
+    std::string remotefileService(std::vector<std::string*> &postLine, std::string ip);
 };
 
 

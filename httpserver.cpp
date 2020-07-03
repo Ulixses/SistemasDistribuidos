@@ -46,8 +46,9 @@ httpServer::httpServer(unsigned short port)
     buildMimetypeTable();
 
     //Añadidido por Alejandro
-    this->pclase = NULL;
-    this->file = NULL;
+
+    this->generateServices();
+    this->generateDependencies();
 }
 
 std::string httpServer::getmimeType(char* file)
@@ -357,7 +358,7 @@ bool httpServer::validatePassword(char* username,char* password){
 
 void httpServer::closeServer()
 {
-
+    
     close(this->sock_fd);
 }
 
@@ -377,54 +378,59 @@ void httpServer::servicesPost(int newsock_fd, std::vector<std::string*> &postLin
     char resultadoTemplate[] ="\
 <html>\n\
 <body>\n\
-<h2>La suma es: %s</h2><br>\n\
-<h2>El contenido del fichero es: %s</h2><br>\n\
+%s\n\
+%s\n\
 </body>\n\
 </html>";
 
-    char suma[] = "Proceso no realizado";
-    std::string archivo = "Proceso no realizado";
+
+    char template_suma[] = "<h2>La suma de la ip %s es: %d</h2><hr>\n";
+    std::string suma= "";
+
+    char template_archivo[] = "<h2>El contenido del fichero de la ip %s es: %s</h2><hr>\n";
+    std::string archivo = "";
     if(pruebaclase)
     {
-        if(pclase == NULL)
+        char * ip;
+        char dummy[100];
+        for(int i = 0; i < MPI_Manager::pruebaclase.size(); i++)
         {
-            pclase=new pruebaClase_stub();
-            int result=pclase->suma(1,2);
-            sprintf(suma, "%d", result);
-            time(&pclaseTime);
+            std::string postName = "pc" + std::to_string(i);
+            ip = getFromPost(postLine,postName);
+            if(ip != NULL)
+            {
+                int result = this->pruebaclaseService(postLine, std::string(ip));
+                sprintf(dummy, template_suma,  ip, result);
+                suma += dummy;
+            }
         }
-        else
-        {
-            int result=pclase->suma(1,2);
-            sprintf(suma, "%d", result);
-        }
+        
     }
+    if(suma.size() == 0)
+        suma = "<h2>La suma es: Proceso no realizado</h2><br>\n";
     if(remoteFile)
     {
-        if(file == NULL)
-        {
-            file=new remoteFile_stub();
-            unsigned long int bufflen;
-            char * buff = NULL;
-            file->readfile("prueba.txt",&buff,&bufflen);
-            archivo = buff;
-            if(buff != NULL)
-                delete[] buff;
-            time(&fileTime);
-        }
-        else
-        {
-            unsigned long int bufflen;
-            char * buff = NULL;
-            file->readfile("prueba.txt",&buff,&bufflen);
-            archivo = buff;
-            if(buff != NULL)
-            delete[] buff;
+        char * ip;
+        char dummy[300];
+        for(int i = 0; i < MPI_Manager::pruebaclase.size(); i++)
+        {  
+            std::string postName = "rf" + std::to_string(i);
+            ip = getFromPost(postLine,postName);
+            if(ip != NULL)
+            {
+                std::string result = this->remotefileService(postLine, std::string(ip));
+                sprintf(dummy, template_archivo,  ip, result.c_str());
+                archivo += dummy;
+            }
         }
     }
-    int fileSize = strlen(suma) + archivo.size() + strlen(resultadoTemplate) + 1;
+    if(archivo.size()==0)
+        archivo= "<h2>El contenido del fichero es: Proceso no realizado</h2><hr>\n";
+
+
+    int fileSize = suma.size() + archivo.size() + strlen(resultadoTemplate) + 1;
     char * content = new char[fileSize];
-    sprintf(content, resultadoTemplate, suma, archivo.c_str());
+    sprintf(content, resultadoTemplate, suma.c_str(), archivo.c_str());
     sendVirtualFile(newsock_fd, "resultado.html", content);
 
 }
@@ -434,16 +440,202 @@ void httpServer::checkTimes()
     //std::cout << "HE COMPROBADO LOS TIEMPOS\n";
     
     int tiempo = 60; //Tiempo en segundos para apagar los procesos
-    if(file != NULL && difftime(time(NULL),fileTime) > tiempo)
+    for(auto i : pclase)
+        if(difftime(time(NULL),i.second) > tiempo)
+        {
+            std::cout << "HE BORRADO REMOTEFILE\n";
+            delete i.first;
+            pclase.erase(i.first);
+        }
+    for(auto i : file)
+        if(difftime(time(NULL),i.second) > tiempo)
+        {
+            std::cout << "HE BORRADO PCLASE\n";
+            delete i.first;
+            file.erase(i.first);
+        }
+}
+
+void httpServer::generateServices()
+{    
+    std::string filepath=this->files_path+std::string("/services_template.html");
+    char* fileContent=NULL;
+    unsigned long int filelen=0;
+    readFile(&filepath[0],&fileContent,&filelen);
+
+    //<option value="10.0.2.23">10.0.2.23</option>
+    //<input type="checkbox" name='pc1'>10.0.2.23</option>
+
+    std::string ips_file = "";
+    std::string ips_prueba = "";
+    char option_template_prueba[] = "<hr>\n<input type='checkbox' name='pc%d' value='%s' >%s</input>\n";
+    char option_template_file[] = "<hr>\n<input type='checkbox' name='rf%d' value='%s' >%s</input>\n";
+    char dummy[100];
+    int n = 0;
+    for (auto i : MPI_Manager::pruebaclase)
     {
-        std::cout << "HE BORRADO REMOTEFILE\n";
-        delete file;
-        file = NULL;
+        sprintf(dummy, option_template_prueba, n, i.first.c_str(), i.first.c_str());
+        ips_prueba += dummy;
+        n++;
     }
-    if(pclase != NULL && difftime(time(NULL),pclaseTime) > tiempo)
+    ips_prueba += "<hr>\n";
+    n=0;
+    for (auto i : MPI_Manager::remotefile)
     {
-        std::cout << "HE BORRADO PCLASE\n";
-        delete pclase;
-        pclase = NULL;
+        sprintf(dummy, option_template_file, n, i.first.c_str(), i.first.c_str());
+        ips_file += dummy;
+        n++;
+    }
+    ips_file += "<hr>\n";
+    char * new_services = new char[filelen + ips_file.size() + ips_prueba.size() + 1];
+    sprintf(new_services, fileContent, ips_prueba.c_str(), ips_file.c_str());
+
+    filepath=this->files_path+std::string("/services.html");
+    FILE * service = fopen(filepath.c_str(),"w");
+    if(service == NULL)
+        std::cout << "Error al abrir services.html\n";
+    else
+    {
+        fputs(new_services, service);
+        fclose(service);
+    }
+    delete[] new_services;
+}
+
+int httpServer::pruebaclaseService(std::vector<std::string*> &postLine , std::string ip)
+{
+    int result = 0;
+    int n1 = std::stoi(getFromPost(postLine,"n1"));
+    int n2 = std::stoi(getFromPost(postLine,"n2"));
+    //std::string ip = getFromPost(postLine,"ip_prueba");
+
+    std::string cmdEnd = "ulises@" + ip + ":/home/ulises/SistemasDistribuidos/build";
+    std::string cmdStart = "scp ";
+
+    //Compruebo si esta copiado
+    if(!MPI_Manager::pruebaclase[ip])
+    {
+        //Copiar archivo y marcar como copiado
+        MPI_Manager::pruebaclase[ip] = true;
+        std::string update = "UPDATE services SET copiado=1 WHERE ip='" + ip;
+        update += "' and service='rpc_pruebaclase'";
+        updateCommand(update);
+        for(auto i: this->dependencies)
+        {
+            if(i.first.compare("rpc_pruebaclase") == 0)
+                cmdStart += i.second + " ";
+        }
+        std::string command = cmdStart + cmdEnd;
+        FILE * scp = popen(command.c_str(),"w");
+        pclose(scp);
+    }
+    for(auto i : pclase)
+    {
+        if(i.first->ip == ip)
+        {
+            return i.first->suma(n1,n2);
+        }
+    }
+
+    pruebaClase_stub * dummy;
+    dummy=new pruebaClase_stub((char *)ip.c_str());
+    result=dummy->suma(n1,n2);
+    pclase.insert(std::pair<pruebaClase_stub*, time_t>(dummy,time(NULL)));
+
+    return result;
+}
+
+std::string httpServer::remotefileService(std::vector<std::string*> &postLine, std::string ip)
+{
+    //std::string ip = getFromPost(postLine,"ip_file");
+
+    std::string cmdEnd = "ulises@" + ip + ":/home/ulises/SistemasDistribuidos/build";
+    std::string cmdStart = "scp ";
+
+    //std::cout << command << "\n";
+    //Compruebo si esta copiado
+    if(!MPI_Manager::remotefile[ip])
+    {
+        //Copiar archivo y marcar como copiado
+        MPI_Manager::remotefile[ip] = true;
+        std::string cmd = "UPDATE services SET copiado=1 WHERE ip='" + ip;
+        cmd += "' and service='rpc_remotefile'";
+        updateCommand(cmd);
+        for(auto i: this->dependencies)
+        {
+            if(i.first.compare("rpc_remotefile") == 0)
+                cmdStart += i.second + " ";
+        }
+        std::string command = cmdStart + cmdEnd;
+        FILE * scp = popen(command.c_str(),"w");
+        pclose(scp);
+    }
+
+
+    for(auto i : file)
+    {
+        if(i.first->ip == ip)
+        {
+            unsigned long int bufflen;
+            char * buff = NULL;
+            std::string result;
+            i.first->readfile("prueba.txt",&buff,&bufflen);
+            if(buff == NULL)
+                result = "No existe ese archivo.";
+            else
+            {
+                result = buff;
+                delete[] buff;
+            }
+            return result;
+        }
+    }
+
+    remoteFile_stub * dummy =new remoteFile_stub((char*)ip.c_str());
+    unsigned long int bufflen;
+    char * buff = NULL;
+    dummy->readfile("prueba.txt",&buff,&bufflen);
+    std::string result = buff;
+    if(buff != NULL)
+        delete[] buff;
+    file.insert(std::pair<remoteFile_stub*, time_t>(dummy,time(NULL)));
+
+    return result;
+}
+
+void httpServer::generateDependencies()
+{
+    try
+    {
+        sql::Connection *con;
+        //Acceder a la base de datos y obtener todas las ips de cada proceso
+        con = getMySql();
+        if(con == NULL)
+        {
+            std::cout << "No se han podido obtener las dependencias de la base de datos\n";
+            return;
+        }
+        sql::Statement  *query;
+        sql::ResultSet *res;
+        std::string service;
+        std::string file;
+        query = con->createStatement();
+        res = query->executeQuery("select * from dependencies");
+        while (res->next())
+        {
+            service = res->getString("service");
+            file = res->getString("file");
+            this->dependencies.emplace_back(service, file);
+        }
+        delete query;
+        delete res;
+        delete con;
+    }
+    catch (sql::SQLException &e){
+        std::cout << "# ERR: SQLException in " << __FILE__;
+        std::cout << "(" << __FUNCTION__ << ") on line "<< __LINE__ << std::endl;
+        std::cout << "# ERR: " << e.what();
+        std::cout << " (MySQL error code: " << e.getErrorCode();
+        std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
     }
 }

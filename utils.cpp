@@ -5,6 +5,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <cppconn/statement.h>
+
+
 void readLine(int socket,std::vector<std::string*> *line)
 {
     std::string* str=new std::string("");
@@ -254,4 +257,33 @@ sql::Connection * getMySql()
     }
      
     return NULL;
+}
+
+void updateCommand(std::string cmd)
+{
+    try
+    {
+        sql::Connection *con;
+        sql::Statement  *stmt;
+        //std::cout << cmd << "\n"; 
+        con = getMySql();
+        if(con == NULL)
+        {
+            return;
+        }
+        stmt = con->createStatement();
+        stmt->executeUpdate(cmd.c_str());
+
+        delete stmt;
+        delete con;
+    }
+    catch (sql::SQLException &e)
+    {
+        std::cout << "# ERR: SQLException in " << __FILE__;
+        std::cout << "(" << __FUNCTION__ << ") on line "<< __LINE__ << std::endl;
+        std::cout << "# ERR: " << e.what();
+        std::cout << " (MySQL error code: " << e.getErrorCode();
+        std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+    }
+    
 }

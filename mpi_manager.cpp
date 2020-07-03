@@ -8,8 +8,8 @@
 
 std::vector<MPI_Comm*> MPI_Manager::comms;
 bool MPI_Manager::init =false;
-std::map<std::string, int> MPI_Manager::remotefile;
-std::map<std::string, int> MPI_Manager::pruebaclase;
+std::map<std::string, bool> MPI_Manager::remotefile;
+std::map<std::string, bool> MPI_Manager::pruebaclase;
 
 
 MPI_Manager::MPI_Manager()
@@ -40,25 +40,25 @@ void MPI_Manager::Init()
             sql::Statement  *query;
             sql::ResultSet *res;
             std::string ip;
+            bool copy = false;
             sql::SQLString dummy;
             query = con->createStatement();
             res = query->executeQuery("select * from services");
             while (res->next())
             {
                 dummy = res->getString("service");
+                ip = res->getString("ip");
+                copy = res->getBoolean("copiado");
                 if(dummy.compare("rpc_pruebaclase") == 0) //rpc_pruebaclase
                 {
-                    ip = res->getString("ip");
-                    pruebaclase.insert(std::pair<std::string, int>(ip,0));
-                    std::cout << dummy << ":" << ip << std::endl;
+                    pruebaclase.insert(std::pair<std::string, bool>(ip,copy));
                 }
                 else if(dummy.compare("rpc_remotefile") == 0) //rpc_remotefile
                 {
-                    ip = res->getString("ip");
-                    remotefile.insert(std::pair<std::string, int>(ip,0));
-                    std::cout << dummy << ":" << ip << std::endl;
-
+                    remotefile.insert(std::pair<std::string, bool>(ip,copy));
                 }
+                std::cout << dummy << ":" << ip << " -- "<< copy << std::endl;
+
             }
             delete query;
             delete res;
@@ -88,18 +88,18 @@ void MPI_Manager::Finalize()
     }
    }
 
-MPI_Comm* MPI_Manager::Instanciate(char *processName)
+MPI_Comm* MPI_Manager::Instanciate(char *processName, char* host)
 {
     MPI_Comm* newComm= new MPI_Comm[1];
     MPI_Info info;
     MPI_Info_create(&info);
-    if(strcmp(processName, "rpc_remotefile") == 0)
+    if(strcmp(processName, "rpc_remotefile") == 0 || 
+    strcmp(processName, "rpc_pruebaclase") == 0)
     {
-        MPI_Info_set(info,"host",getBestRemotefile().c_str());
-    }
-    else if(strcmp(processName, "rpc_pruebaclase") == 0)
-    {            
-        MPI_Info_set(info,"host",getBestPruebaclase().c_str());
+        if(host == NULL)
+            MPI_Info_set(info,"host","localhost");
+        else
+            MPI_Info_set(info,"host",host);
     }        
     else
         MPI_Info_set(info,"host","localhost");
@@ -109,47 +109,4 @@ MPI_Comm* MPI_Manager::Instanciate(char *processName)
     comms.push_back(newComm);
     return newComm;
 }
-
-std::string MPI_Manager::getBestPruebaclase()
-{
-    int usos = INT32_MAX;
-    std::string ip;
-    for (auto i : pruebaclase)
-    {
-        if(i.second < usos)
-        {
-            usos = i.second;
-            ip = i.first;
-        }
-    }
-    pruebaclase[ip]++;
-    return ip;
-}
-
-std::string MPI_Manager::getBestRemotefile()
-{
-    int usos = INT32_MAX;
-    std::string ip;
-    for (auto i : remotefile)
-    {
-        if(i.second < usos)
-        {
-            usos = i.second;
-            ip = i.first;
-        }
-    }
-    remotefile[ip]++;
-    return ip;
-}
-
-
-
-
-
-
-
-
-
-
-
 

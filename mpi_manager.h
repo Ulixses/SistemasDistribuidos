@@ -8,15 +8,15 @@ class MPI_Manager
 {
     static bool init;
     static std::vector<MPI_Comm*> comms;
-    static std::map<std::string, int> remotefile;
-    static std::map<std::string, int> pruebaclase;
+    
 public:
+    static std::map<std::string, bool> remotefile;
+    static std::map<std::string, bool> pruebaclase;
+
     MPI_Manager();
     static void Init();
     static void Finalize();
-    static MPI_Comm* Instanciate(char* processName);
-    static std::string getBestPruebaclase();
-    static std::string getBestRemotefile();
+    static MPI_Comm* Instanciate(char* processName, char* host = NULL);
 
 };
 

@@ -15,23 +15,39 @@ void readLine(int socket,std::vector<std::string*> *line)
     struct timeval tv;
     tv.tv_sec = 1;
     tv.tv_usec = 0;
+    bool concatenateSpaces=false;
     setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof (tv));
     while(c!='\n')
     {
         read(socket,&c,1);
-        if((c==' ')||(c=='\n'))
+
+        if(((c==' ')&&(!concatenateSpaces))||(c=='\n'))
         {
             if(str->length()>0)
             {
                 line->push_back(str);
                 str=new std::string("");
             }
-        }else if(c!='\r')
+        }else if(c=='\"')
+        {
+            concatenateSpaces=!concatenateSpaces;
+        }else
+        if(c!='\r')
         {
             str->append(1,c);
         }
+
     }
 }
+
+void printPostLines(std::vector<std::string*> *postLine)
+{
+    for(int i=0;i<postLine->size();i++)
+    {
+    std::cout<<*((*postLine)[i])<<"\n";
+    }
+}
+
 
 void readLines(int socket,std::vector<std::vector<std::string*> *> *lines)
 {
@@ -49,11 +65,11 @@ void readPostLine(int socket,std::vector<std::string*> *line,int length)
     std::string* str=new std::string("");
     char c=' ';
     int pos=0;
-    
+
     while(pos!=length)
     {
         read(socket,&c,1);
-        
+
         if(c=='&')
         {
             line->push_back(str);
@@ -72,7 +88,6 @@ void readPostLine(int socket,std::vector<std::string*> *line,int length)
         }
 
     }
-    
 }
 
 void deleteLines(std::vector<std::vector<std::string*>*>* lines)
@@ -145,7 +160,6 @@ httpServer::httpRequest_t getRequestType(std::vector<std::string*>* line)
     return req;
 
 }
-
 
 void createHeader(char** httpHeader,unsigned long int * headerLen,
              const char* responseCode,
@@ -224,12 +238,55 @@ char* getFromPost(std::vector<std::string*> &postLine, std::string param)
             result=new char[((*v)[1]->size())+1];
             memcpy(result,((*v)[1]->c_str()),((*v)[1]->size())+1);
         }
-        delete (*v)[0];
-        delete (*v)[1];
+        for(int i=0;i<v->size();i++)
+            delete (*v)[i];
+
         delete v;
     }
 
     return result;
+}
+
+void getFileFromPost(int socket,int postLen,char* &fileName,char* &data, int &dataLength )
+{
+    std::vector<std::string*>* boundary;
+    std::vector<std::vector<std::string*>*> lines;
+    std::vector<std::string*>* line;
+    boundary=new std::vector<std::string*>();
+    int filesize=postLen;
+    readLine(socket,boundary);
+    filesize-=boundary->at(0)->size()+2;// add \r\n
+    do{
+        line=new std::vector<std::string*>();
+        readLine(socket,line);
+        char* fname=getFromPost(*line,"filename");
+        if(fname!=nullptr)
+            fileName=fname;
+        lines.push_back(line);
+    }while(line->size()!=0);
+
+    for(unsigned long int i=0;i<lines.size();i++)
+    {
+        line=lines.at(i);
+        for(unsigned long int j=0;j<line->size();j++)
+        {
+            filesize-=line->at(j)->size();
+            filesize--;
+        }
+        filesize--;
+    }
+    filesize--;//spurious \r
+    filesize-=2;//\r\n after data
+    filesize-=boundary->at(0)->size()+4;// adds --\r\n
+
+    data=new char[filesize];
+    dataLength=filesize;
+    char c='\0';
+    for(int i=0;i<filesize;i++)
+    {
+        read(socket,&c,1);
+        data[i]=c;
+    }
 }
 
 sql::Connection * getMySql()

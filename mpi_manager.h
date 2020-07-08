@@ -12,6 +12,7 @@ class MPI_Manager
 public:
     static std::map<std::string, bool> remotefile;
     static std::map<std::string, bool> pruebaclase;
+    static std::map<std::string, bool> filemanager;
 
     MPI_Manager();
     static void Init();

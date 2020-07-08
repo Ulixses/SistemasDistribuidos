@@ -138,6 +138,7 @@ void httpServer::buildMimetypeTable()
     this->mimeTypes["zip"]="application/zip";
     this->mimeTypes["3gp"]="video/3gpp";
     this->mimeTypes["3g2"]="video/3gpp2";
+    //this->mimeTypes["txt"]="text/plain";
     this->mimeTypes["7z"]="application/x-7z-compressed";
 
 }
@@ -214,6 +215,7 @@ void httpServer::sendVirtualFile(int newsock_fd,char* file, char *content, std::
                  "200 OK",
                  &(mimetype[0]),
                  filelen);
+ 
     sendContent(newsock_fd,httpHeader,headerLen,content,filelen);
 }
 
@@ -251,6 +253,10 @@ void httpServer::resolveRequests(int newsock_fd)
                 {
                     sendFile(newsock_fd,"/index.html");
                 }
+                else if(s2->find("/files/") != -1)
+                {
+                   fileDownload(newsock_fd, s2);            
+                }   
                 else
                 {
                     sendFile(newsock_fd,&((*s2)[0]));            
@@ -259,11 +265,18 @@ void httpServer::resolveRequests(int newsock_fd)
             break;
         case POST:
            {
+                std::string *s2=(*v)[1];
                 std::vector<std::string*> postLine;
                 int length=getHTTPParameter(&lines,"Content-Length:");
+                
+                if(s2->compare("/store_file.php")==0)
+                {
+                    serviceStore(newsock_fd, postLine, length);
+                    sendFile(newsock_fd,"/services.html");
+
+                }
                 readPostLine(newsock_fd,&postLine,length);
 
-                std::string *s2=(*v)[1];
                 if(s2->compare("/login.php")==0)
                 {
                     char* user= getFromPost(postLine,"uname");
@@ -278,8 +291,12 @@ void httpServer::resolveRequests(int newsock_fd)
                     delete[] user;
                     delete[] pass;
                 }
-
-                if(s2->compare("/services.php")==0)
+                
+                if(s2->compare("/download_file.php")==0)
+                {
+                    serviceDownload(newsock_fd, postLine);
+                }
+                if(s2->compare("/services.php")== 0)
                 {
                     servicesPost(newsock_fd, postLine);
                 }
@@ -367,17 +384,22 @@ void httpServer::servicesPost(int newsock_fd, std::vector<std::string*> &postLin
     //Leer las checkbox del usuario
     char * pruebaclaseBox = getFromPost(postLine,"pruebaclase");
     char * remoteFileBox = getFromPost(postLine,"remoteFile");
+    char * filemanagerBox = getFromPost(postLine,"filemanager");
     bool pruebaclase = false;
     bool remoteFile = false;
+    bool filemanager = false;
 
     if( pruebaclaseBox != NULL)
         pruebaclase = strcmp(pruebaclaseBox,"on") == 0;
     if( remoteFileBox != NULL)
         remoteFile = strcmp(remoteFileBox,"on") == 0;
+    if( filemanagerBox != NULL)
+        filemanager = strcmp(filemanagerBox,"on") == 0;
 
     char resultadoTemplate[] ="\
 <html>\n\
 <body>\n\
+%s\n\
 %s\n\
 %s\n\
 </body>\n\
@@ -389,6 +411,32 @@ void httpServer::servicesPost(int newsock_fd, std::vector<std::string*> &postLin
 
     char template_archivo[] = "<h2>El contenido del fichero de la ip %s es: %s</h2><hr>\n";
     std::string archivo = "";
+    // ip, ip, lista de archivos, ip
+//     char template_manager[] = "\
+// <h2>Manager de la ip %s:</h2>\n\
+// <form action='download_file.php' method='POST'>\n\
+// <input type='hidden' name='ip' value='%s'>\n\
+// Choose a file to download:<br />\n\
+// %s\
+// <input type='submit' value='Download File' />\n\
+// </form>\n\
+// <form action='store_file.php' method='POST'>\n\
+// <input type='hidden' name='ip' value='%s'>\n\
+// Choose a file to upload: <input name='uploadedfile' type='file' />\n\
+// <input type='submit' value='Upload File' />\n\
+// </form><hr>\n";
+    char template_manager[] = "\
+<h2>Manager de la ip %s:</h2>\n\
+Choose a file to download:<br/>\n\
+%s\
+<form action='store_file.php' method='POST' enctype='multipart/form-data' >\n\
+Choose a file to upload: <input name='uploadedfile' type='file' />\n\
+<input type='hidden' name='ip' value='%s'>\n\
+<input type='submit' value='Upload File' />\n\
+</form><hr>\n";
+std::string manager = "";
+
+    
     if(pruebaclase)
     {
         char * ip;
@@ -407,7 +455,8 @@ void httpServer::servicesPost(int newsock_fd, std::vector<std::string*> &postLin
         
     }
     if(suma.size() == 0)
-        suma = "<h2>La suma es: Proceso no realizado</h2><br>\n";
+        suma = "<h2>La suma es: Proceso no realizado</h2><hr>\n";
+
     if(remoteFile)
     {
         char * ip;
@@ -425,12 +474,30 @@ void httpServer::servicesPost(int newsock_fd, std::vector<std::string*> &postLin
         }
     }
     if(archivo.size()==0)
-        archivo= "<h2>El contenido del fichero es: Proceso no realizado</h2><hr>\n";
+        archivo = "<h2>El contenido del fichero es: Proceso no realizado</h2><hr>\n";
 
+    if(filemanager)
+    {
+        char * ip;
+        char dummy[700];
+        for(int i = 0; i < MPI_Manager::filemanager.size(); i++)
+        {  
+            std::string postName = "fm" + std::to_string(i);
+            ip = getFromPost(postLine,postName);
+            if(ip != NULL)
+            {
+                std::string result = this->filemanagerService(postLine, std::string(ip));
+                sprintf(dummy, template_manager, ip, result.c_str(),ip);
+                manager += dummy;
+            }
+        }
+    }
+    if(manager.size()==0)
+        manager = "<h2>Manager: Proceso no realizado</h2><hr>\n";
 
-    int fileSize = suma.size() + archivo.size() + strlen(resultadoTemplate) + 1;
+    int fileSize = suma.size() + archivo.size() + manager.size() + strlen(resultadoTemplate) + 1;
     char * content = new char[fileSize];
-    sprintf(content, resultadoTemplate, suma.c_str(), archivo.c_str());
+    sprintf(content, resultadoTemplate, suma.c_str(), archivo.c_str(), manager.c_str());
     sendVirtualFile(newsock_fd, "resultado.html", content);
 
 }
@@ -454,6 +521,13 @@ void httpServer::checkTimes()
             delete i.first;
             file.erase(i.first);
         }
+    for(auto i : manager)
+        if(difftime(time(NULL),i.second) > tiempo)
+        {
+            std::cout << "HE BORRADO FMANAGER\n";
+            delete i.first;
+            manager.erase(i.first);
+        }
 }
 
 void httpServer::generateServices()
@@ -468,10 +542,14 @@ void httpServer::generateServices()
 
     std::string ips_file = "";
     std::string ips_prueba = "";
-    char option_template_prueba[] = "<hr>\n<input type='checkbox' name='pc%d' value='%s' >%s</input>\n";
-    char option_template_file[] = "<hr>\n<input type='checkbox' name='rf%d' value='%s' >%s</input>\n";
+    std::string ips_manager = "";
+    char option_template_prueba[] = "<hr>\n<input type='checkbox' name='pc%d' value='%s' >%s\n";
+    char option_template_file[] = "<hr>\n<input type='checkbox' name='rf%d' value='%s' >%s\n";
+    char option_template_manager[] = "<hr>\n<input type='checkbox' name='fm%d' value='%s' >%s\n";
     char dummy[100];
     int n = 0;
+
+
     for (auto i : MPI_Manager::pruebaclase)
     {
         sprintf(dummy, option_template_prueba, n, i.first.c_str(), i.first.c_str());
@@ -487,8 +565,16 @@ void httpServer::generateServices()
         n++;
     }
     ips_file += "<hr>\n";
-    char * new_services = new char[filelen + ips_file.size() + ips_prueba.size() + 1];
-    sprintf(new_services, fileContent, ips_prueba.c_str(), ips_file.c_str());
+    n=0;
+    for (auto i : MPI_Manager::filemanager)
+    {
+        sprintf(dummy, option_template_manager, n, i.first.c_str(), i.first.c_str());
+        ips_manager += dummy;
+        n++;
+    }
+    ips_manager += "<hr>\n";
+    char * new_services = new char[filelen + ips_file.size() + ips_prueba.size() + ips_manager.size() + 1];
+    sprintf(new_services, fileContent, ips_prueba.c_str(), ips_file.c_str(), ips_manager.c_str());
 
     filepath=this->files_path+std::string("/services.html");
     FILE * service = fopen(filepath.c_str(),"w");
@@ -571,7 +657,6 @@ std::string httpServer::remotefileService(std::vector<std::string*> &postLine, s
         pclose(scp);
     }
 
-
     for(auto i : file)
     {
         if(i.first->ip == ip)
@@ -591,7 +676,7 @@ std::string httpServer::remotefileService(std::vector<std::string*> &postLine, s
         }
     }
 
-    remoteFile_stub * dummy =new remoteFile_stub((char*)ip.c_str());
+    remoteFile_stub * dummy = new remoteFile_stub((char*)ip.c_str());
     unsigned long int bufflen;
     char * buff = NULL;
     dummy->readfile("prueba.txt",&buff,&bufflen);
@@ -601,6 +686,71 @@ std::string httpServer::remotefileService(std::vector<std::string*> &postLine, s
     file.insert(std::pair<remoteFile_stub*, time_t>(dummy,time(NULL)));
 
     return result;
+}
+
+std::string httpServer::filemanagerService(std::vector<std::string*> &postLine, std::string ip)
+{
+    char file_template[] = "<a href='%s' download >%s</a>\n";
+    // char file_template[] = "<option value='%s'>%s</option>\n";
+
+    std::string cmdEnd = "ulises@" + ip + ":/home/ulises/SistemasDistribuidos/build";
+    std::string cmdStart = "scp ";
+
+    //Compruebo si esta copiado
+    if(!MPI_Manager::filemanager[ip])
+    {
+        //Copiar archivo y marcar como copiado
+        MPI_Manager::remotefile[ip] = true;
+        std::string cmd = "UPDATE services SET copiado=1 WHERE ip='" + ip;
+        cmd += "' and service='rpc_filemanager'";
+        updateCommand(cmd);
+        for(auto i: this->dependencies)
+        {
+            if(i.first.compare("rpc_filemanager") == 0)
+                cmdStart += i.second + " ";
+        }
+        std::string command = cmdStart + cmdEnd;
+        FILE * scp = popen(command.c_str(),"w");
+        pclose(scp);
+    }
+
+    for(auto i : manager)
+    {
+        if(i.first->ip == ip)
+        {
+            std::string result = "";
+            std::vector<std::string*>* vfiles = i.first->listFiles();
+            for(int i=0; i<vfiles->size();++i)
+            {
+                char dummy[100];
+                //vfiles->at(i)->c_str()
+                std::string url = "/files/"; 
+                url += vfiles->at(i)->c_str(); 
+                url += "?ip=" + ip;
+                sprintf(dummy,file_template,url.c_str(),vfiles->at(i)->c_str());
+                result += dummy;
+            }
+            //result = "<select name='file'>\n" + result + "\n</select>";
+            return result;
+        }
+    }
+
+    filemanager_stub * temp_service = new filemanager_stub((char*)ip.c_str());
+    std::string result = "";
+    std::vector<std::string*>* vfiles = temp_service->listFiles();
+    for(int i=0; i<vfiles->size();++i)
+    {
+        char dummy[100];
+        //vfiles->at(i)->c_str()
+        std::string url = "/files/"; 
+        url += vfiles->at(i)->c_str(); 
+        url += "?ip=" + ip;
+        sprintf(dummy,file_template,url.c_str(),vfiles->at(i)->c_str());
+        result += dummy;
+    }
+    //result = "<select name='file'>\n" + result + "\n</select>";
+    manager.insert(std::pair<filemanager_stub*, time_t>(temp_service,time(NULL)));
+    return result; 
 }
 
 void httpServer::generateDependencies()
@@ -639,3 +789,89 @@ void httpServer::generateDependencies()
         std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
     }
 }
+
+void httpServer::serviceStore(int newsock_fd, std::vector<std::string*> &postLine, int contentLenght)
+{
+    char * fileName = NULL, * buff = NULL;
+    int buffLen = 0;
+    getFileFromPost(newsock_fd, contentLenght, fileName, buff, buffLen);
+
+    //Find file data
+    std::string postData(buff, buffLen);
+    std::string fileData = postData.substr(0, postData.find("\r\n"));
+
+    //Find IP
+    int inicioIP = postData.find("name=\"ip\"")+13;
+    int finIP = postData.find("\r\n", inicioIP);
+    std::string ip = postData.substr(inicioIP, finIP - inicioIP);
+    
+    //Find machine
+    for(auto i : manager)
+    {
+        if(i.first->ip == ip)
+        {
+            i.first->writeFile(fileName, (char *)fileData.c_str(), fileData.size());
+            delete[] fileName;
+            delete[] buff;
+            return;
+        }
+    }
+
+}
+
+void httpServer::serviceDownload(int newsock_fd, std::vector<std::string*> &postLine)
+{
+    char * data;
+    char * ip = getFromPost(postLine,"ip");
+    char * fileName = getFromPost(postLine,"file");
+    std::string fileEnd = fileName;
+    fileEnd = fileEnd.substr(fileEnd.find('.')+1);
+
+    //Get file from remote
+
+    for(auto i : manager)
+    {
+        if(i.first->ip == ip)
+        {
+            unsigned long fileLen = 0;
+            i.first->readFile(fileName, data, fileLen);
+            //Send file
+            sendVirtualFile(newsock_fd, fileName, data, fileEnd);
+            return;
+        }
+    }
+
+    sendVirtualFile(newsock_fd, "error.html", "<h2>Proceso finalizado, vuelva a intentarlo</h2>");
+}
+
+void httpServer::fileDownload(int newsock_fd, std::string * url)
+{
+    char * data;
+    int inicio = url->find("/files/") + 7;
+    int total = url->find("?ip=") - inicio;
+    std::string fileName = url->substr(inicio, total);
+    inicio = url->find("?ip=") + 4;
+    total = -1;
+    std::string ip = url->substr(inicio, total);
+    std::string fileEnd = fileName;
+    fileEnd = fileEnd.substr(fileEnd.find('.')+1);
+
+    //Get file from remote
+
+    for(auto i : manager)
+    {
+        if(i.first->ip == ip)
+        {
+            unsigned long fileLen = 0;
+            i.first->readFile((char *)fileName.c_str(), data, fileLen);
+            //Send file
+            sendVirtualFile(newsock_fd, (char *)fileName.c_str(), data, fileEnd);
+            return;
+        }
+    }
+
+    sendVirtualFile(newsock_fd, "error.html", "<h2>Proceso finalizado, vuelva a intentarlo</h2>");
+
+}         
+
+

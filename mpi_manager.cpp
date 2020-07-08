@@ -10,6 +10,7 @@ std::vector<MPI_Comm*> MPI_Manager::comms;
 bool MPI_Manager::init =false;
 std::map<std::string, bool> MPI_Manager::remotefile;
 std::map<std::string, bool> MPI_Manager::pruebaclase;
+std::map<std::string, bool> MPI_Manager::filemanager;
 
 
 MPI_Manager::MPI_Manager()
@@ -57,6 +58,10 @@ void MPI_Manager::Init()
                 {
                     remotefile.insert(std::pair<std::string, bool>(ip,copy));
                 }
+                else if(dummy.compare("rpc_filemanager") == 0) //rpc_filemanager
+                {
+                    filemanager.insert(std::pair<std::string, bool>(ip,copy));
+                }
                 std::cout << dummy << ":" << ip << " -- "<< copy << std::endl;
 
             }
@@ -94,7 +99,8 @@ MPI_Comm* MPI_Manager::Instanciate(char *processName, char* host)
     MPI_Info info;
     MPI_Info_create(&info);
     if(strcmp(processName, "rpc_remotefile") == 0 || 
-    strcmp(processName, "rpc_pruebaclase") == 0)
+    strcmp(processName, "rpc_pruebaclase") == 0 ||
+    strcmp(processName, "rpc_filemanager") == 0)
     {
         if(host == NULL)
             MPI_Info_set(info,"host","localhost");

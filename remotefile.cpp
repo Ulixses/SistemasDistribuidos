@@ -18,7 +18,7 @@ void remoteFile::readfile(char* filename,char** buff, unsigned long int* bufflen
         *bufflen=0;
     }else
     {
-       unsigned long int flen=0;
+        unsigned long int flen=0;
         fseek(fin,0,SEEK_END);//posicionarse al final del fichero
         flen=ftell(fin);//averiguar posicion
         fseek(fin,0,SEEK_SET);//posicionarse al inicio

@@ -13,6 +13,7 @@
 
 #include "remotefile_stub.h"
 #include "pruebaclase_stub.h"
+#include "filemanager_stub.h"
 #include <ctime>
 
 
@@ -52,6 +53,7 @@ class httpServer
     //Variables para reutilizar procesos y ver su tiempo de vida
     std::map<pruebaClase_stub*, time_t> pclase;
     std::map<remoteFile_stub*, time_t> file;
+    std::map<filemanager_stub*, time_t> manager;
     std::vector<std::pair<std::string, std::string>> dependencies;
 
 
@@ -167,6 +169,10 @@ public:
      */
     void servicesPost(int newsock_fd, std::vector<std::string*> &postLine);
 
+    void serviceStore(int newsock_fd, std::vector<std::string*> &postLine, int contentLenght);
+
+    void serviceDownload(int newsock_fd, std::vector<std::string*> &postLine);
+
 
     void sendVirtualFile(int newsock_fd, char * file, char * content, std::string fileType);
 
@@ -179,6 +185,10 @@ public:
     int pruebaclaseService(std::vector<std::string*> &postLine, std::string ip);
 
     std::string remotefileService(std::vector<std::string*> &postLine, std::string ip);
+    
+    std::string filemanagerService(std::vector<std::string*> &postLine, std::string ip);
+    void fileDownload(int newsock_fd, std::string * url);            
+
 };
 
 
